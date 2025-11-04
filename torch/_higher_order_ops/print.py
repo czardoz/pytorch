@@ -1,8 +1,10 @@
 import builtins
+from typing import Any, cast
 
 import torch
 import torch.utils._pytree as pytree
 from torch._ops import HigherOrderOperator
+from torch.fx.experimental.proxy_tensor import get_proxy_slot, ProxyTorchDispatchMode
 
 
 class Print(HigherOrderOperator):
@@ -24,6 +26,35 @@ class Print(HigherOrderOperator):
 
 
 print = Print()
+
+
+@print.py_autograd_impl
+# pyre-ignore
+def print_autograd(format_str: str, **kwargs: object) -> None:
+    with torch._C._ExcludeDispatchKeyGuard(
+        torch._C.DispatchKeySet(torch._C.DispatchKey.AutogradCPU)
+    ):
+        return None
+
+
+@print.py_impl(ProxyTorchDispatchMode)
+# pyre-ignore
+def print_proxy_torch_dispatch_mode(
+    mode: ProxyTorchDispatchMode, format_str: str, **kwargs: object
+) -> None:
+    def _unwrap_proxy(e: tuple) -> Any:
+        if not isinstance(e, (torch.Tensor, torch.SymInt, torch.SymFloat)):
+            return e
+        return get_proxy_slot(
+            cast(torch.Tensor, e),
+            mode.tracer,
+            e,
+            lambda e: e.proxy,  # type: ignore[attr-defined]
+        )
+
+    node_args = (format_str, kwargs)
+    proxy_args = pytree.tree_map(_unwrap_proxy, node_args)
+    mode.tracer.create_proxy("call_function", print, proxy_args, {}, name="print")
 
 
 @print.py_impl(torch._C.DispatchKey.CompositeExplicitAutograd)
