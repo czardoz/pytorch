@@ -99,10 +99,7 @@ def get_rocm_target_archs() -> list[str]:
     except Exception as e:
         log.debug(f"Could not read config.rocm.target_archs: {e}")
 
-    # Default to common MI300/MI450 architectures
-    default_archs = ["gfx90a", "gfx942", "gfx1100", "gfx1101"]
-    log.info(f"Using default ROCm architectures: {default_archs}")
-    return default_archs
+    return torch.cuda.get_arch_list()
 
 
 def compile_llvm_ir_to_code_object(
